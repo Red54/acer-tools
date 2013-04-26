@@ -265,7 +265,7 @@ int get_diag_tty_name(char* name, int idVendor, int idProduct, int bInterfaceNum
     DIR* usb_device_dir_handle = opendir(usb_device_dir);
     if (!usb_device_dir_handle) {
 	perror("opendir()");
-	return -1;
+	goto out;
     }
 
     while ((entry = readdir(usb_device_dir_handle)) != NULL) {
@@ -308,24 +308,25 @@ int get_diag_tty_name(char* name, int idVendor, int idProduct, int bInterfaceNum
 
 
     /* Our last entry holds the parent interface information */
-    closedir(usb_device_dir_handle);
 
     /* 
      * 1-1.1:1.0 - bInterfaceNumber is the last digit, but  I am not sure
      * what X in 1-1.1:X.0 means and I am too lazy to look-up now.
      */
 
-    if (!node_found)
-	goto err_out;
+    if (!node_found) {
+	goto free_handle;
+    }
 
     // /sys/bus/usb/devices / blah
     snprintf(buf, sizeof(buf), "%s/%s:1.%d", usb_device_dir, entry->d_name,
 					     bInterfaceNumber);
+    closedir(usb_device_dir_handle);
 
     usb_device_dir_handle = opendir(buf);
     if (! usb_device_dir_handle) {
 	perror("opendir(usb_device_dir_handle)");
-	goto err_out;
+	goto out;
     }
 
     node_found = 0;
@@ -336,15 +337,16 @@ int get_diag_tty_name(char* name, int idVendor, int idProduct, int bInterfaceNum
 	}
     }
 
-    closedir(usb_device_dir_handle);
-
     if (node_found) {
 	strcpy(name, entry->d_name);
-	return 0;
+	res = 0;
     }
 
-  err_out:
-    return -1;
+  free_handle:
+    closedir(usb_device_dir_handle);
+
+  out:
+    return res;
 }
 
 int main(int argc, char** argv) {
@@ -352,6 +354,8 @@ int main(int argc, char** argv) {
     char buffer[1024];
     int i = 0, node_found = 0;
     int res = EXIT_SUCCESS;
+
+    memset(device_name, 0, sizeof(device_name));
 
     for (i=0; i < sizeof(known_usb_devices)/sizeof(struct usb_device_interface); i++) {
 	printf("Searching for %04x:%04x (interface %02x)\n",
