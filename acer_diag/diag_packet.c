@@ -1,6 +1,7 @@
 #include <sys/types.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include "crc16ccit.h"
 #include "diag_packet.h"
 
@@ -11,6 +12,10 @@
 diag_packet* diag_packet_new() {
     diag_packet* obj = (diag_packet*) calloc(1, sizeof(diag_packet));
     return obj;
+}
+
+void diag_packet_clear(diag_packet* pkt) {
+    memset(pkt, 0, sizeof(diag_packet));
 }
 
 void diag_packet_free(diag_packet* pkt) {
@@ -39,7 +44,6 @@ void diag_packet_add_crc(diag_packet* pkt) {
     unsigned short crc;
     int i, crc_start = pkt->_has_flag ? 1 : 0;
 
-    /* FIXME: this API looks weird */
     crc16ccit_ctx crc_ctx;
     crc16ccit_new(&crc_ctx);
 
@@ -64,6 +68,7 @@ void diag_packet_add_header(diag_packet* pkt) {
 }
 
 void diag_packet_add_trailer(diag_packet* pkt) {
+    diag_packet_add_crc(pkt);
     pkt->buffer[pkt->length++] = DIAG_HDLC_FLAG;
 }
 
