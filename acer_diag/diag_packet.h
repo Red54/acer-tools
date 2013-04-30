@@ -1,7 +1,6 @@
 struct _diag_packet {
     unsigned char buffer[2048];
     size_t length;
-    int _has_flag;
 };
 
 typedef struct _diag_packet diag_packet;

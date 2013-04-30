@@ -42,7 +42,7 @@ void diag_packet_add_padding(diag_packet* pkt, char value, size_t count) {
 
 void diag_packet_add_crc(diag_packet* pkt) {
     unsigned short crc;
-    int i, crc_start = pkt->_has_flag ? 1 : 0;
+    int i, crc_start = pkt->buffer[0] == DIAG_HDLC_FLAG ? 1 : 0;
 
     crc16ccit_ctx crc_ctx;
     crc16ccit_new(&crc_ctx);
@@ -63,7 +63,6 @@ void diag_packet_add_crc(diag_packet* pkt) {
 }
 
 void diag_packet_add_header(diag_packet* pkt) {
-    pkt->_has_flag = 1;
     pkt->buffer[pkt->length++] = DIAG_HDLC_FLAG;
 }
 
