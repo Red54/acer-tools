@@ -16,19 +16,27 @@
 #define LOCK_PASSWORD   "acer.dfzse,eizdfXD3#($%)@dxiexAA"
 #define UNLOCK_PASSWORD "acer.llxdiafkZidf#$i1234(@01xdiP"
 
+enum {
+    ACER_MODE_OS,
+    ACER_MODE_OS_DEBUG,
+    ACER_MODE_FASTBOOT,
+    ACER_MODE_AMSS,
+    ACER_MODE_UNKNOWN,
+};
+
 struct usb_device_interface {
     int idVendor;
     int idProduct;
     int bInterfaceNumber;
+    int mode;
 };
 
 struct usb_device_interface known_usb_devices[] = {
-    { 0x0502, 0x3202, 0x0 }, // Acer Liquid
+    { 0x0502, 0x3202, 0x0, ACER_MODE_OS_DEBUG }, // Acer Liquid
+    { 0x0502, 0x3203, 0x0, ACER_MODE_OS },	 // Acer Liquid
 };
 
-#define DIAG_DEVICE "/dev/ttyUSB0"
-
-// device file descriptor
+// global device file descriptor
 static int dev_fd;
 
 void dump_packet(unsigned char* buf, size_t count, char dir) {
@@ -243,7 +251,7 @@ int read_hex_int_from_file(char* path) {
     return res;
 }
 
-int get_diag_tty_name(char* name, int idVendor, int idProduct, int bInterfaceNumber) {
+int get_diag_tty_name(char* name, struct usb_device_interface* query) {
     /*
      * We could query libusb for 1,2, but for now a simple magic would do.
      * http://stackoverflow.com/questions/4192974/
@@ -258,6 +266,12 @@ int get_diag_tty_name(char* name, int idVendor, int idProduct, int bInterfaceNum
     int res = -1;
     int node_found = 0;
     int temp_id;
+    int idVendor, idProduct, bInterfaceNumber;
+
+    idVendor = query->idVendor;
+    idProduct = query->idProduct;
+    bInterfaceNumber = query->bInterfaceNumber;
+
     struct dirent* entry;
     char buf[256];
     char* usb_device_dir = "/sys/bus/usb/devices";
@@ -306,7 +320,6 @@ int get_diag_tty_name(char* name, int idVendor, int idProduct, int bInterfaceNum
 	break;
     }
 
-
     /* Our last entry holds the parent interface information */
 
     /* 
@@ -354,6 +367,7 @@ int main(int argc, char** argv) {
     char buffer[1024];
     int i = 0, node_found = 0;
     int res = EXIT_SUCCESS;
+    int device_mode = ACER_MODE_UNKNOWN;
 
     memset(device_name, 0, sizeof(device_name));
 
@@ -363,26 +377,24 @@ int main(int argc, char** argv) {
 		known_usb_devices[i].idProduct,
 		known_usb_devices[i].bInterfaceNumber);
 
-	if (!get_diag_tty_name(device_name,
-		              known_usb_devices[i].idVendor,
-			      known_usb_devices[i].idProduct,
-			      known_usb_devices[i].bInterfaceNumber)) {
+	if (!get_diag_tty_name(device_name, &known_usb_devices[i])) {
 	    node_found = 1;
+	    device_mode = known_usb_devices[i].mode;
 	    break;
 	}
     }
 
     if (!node_found) {
 	fprintf(stderr,
-		"%s: No DIAG devices found\n"
-		"Please make sure qcserial module is loaded and it knows about your device"
+		"%s: No diag tty found\n"
+		"Please make sure qcserial module is loaded and it knows about your device\n"
 		, argv[0]);
 	return EXIT_FAILURE;
     }
 
     snprintf(buffer, sizeof(buffer), "/dev/%s", device_name);
 
-    printf("Using device %s\n", buffer);
+    printf("Using device %s (%d)\n", buffer, device_mode);
     dev_fd = open(buffer, O_RDWR | O_EXCL | O_NONBLOCK | O_NOCTTY);
 
     if (dev_fd < 0) {
