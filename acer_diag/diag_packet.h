@@ -1,3 +1,6 @@
+#ifndef _ACER_DIAG_DIAG_PACKET_H
+#define _ACER_DIAG_DIAG_PACKET_H
+
 struct _diag_packet {
     unsigned char buffer[2048];
     size_t length;
@@ -13,3 +16,4 @@ void diag_packet_add_crc(diag_packet* pkt);
 void diag_packet_add_header(diag_packet* pkt);
 void diag_packet_add_trailer(diag_packet* pkt);
 
+#endif // _ACER_DIAG_DIAG_PACKET_H

@@ -8,20 +8,18 @@
 #include <string.h>
 #include <dirent.h>
 
-#include "crc16ccit.h"
 #include "diag_packet.h"
+#include "acer_diag.h"
+#include "commands.h"
 
-#define LOCK_PASSWORD   "acer.dfzse,eizdfXD3#($%)@dxiexAA"
-#define UNLOCK_PASSWORD "acer.llxdiafkZidf#$i1234(@01xdiP"
-
-enum {
-    ACER_MODE_OS            = 1,
-    ACER_MODE_DEBUG         = 2,
-    ACER_MODE_USB_TETHERING = 4,
-    ACER_MODE_AMSS          = 16,
-    // We won't be able to do anything in these modes for now:
-    ACER_MODE_FASTBOOT,
-    ACER_MODE_UNKNOWN,
+struct {
+    int mode;
+    char description[64];
+} acer_device_modes[] = {
+    { ACER_MODE_OS, "OS" },
+    { ACER_MODE_AMSS, "AMSS" },
+    { ACER_MODE_USB_TETHERING, "USB Tethering" },
+    { ACER_MODE_DEBUG, "ADB" },
 };
 
 struct usb_device_interface {
@@ -83,6 +81,7 @@ int diag_write(unsigned char* buf, size_t count) {
 
 int diag_write_packet(diag_packet* pkt) {
     diag_discard_content();
+
     return diag_write(pkt->buffer, pkt->length);
 }
 
@@ -120,148 +119,6 @@ int diag_read(unsigned char* buf, size_t count, int timeout) {
  *  0xd1, 0x29, 0x26, 0 * 81, CRC, END
  */
 
-int cmd_os_unlock() {
-    diag_write(UNLOCK_PASSWORD, strlen(UNLOCK_PASSWORD));
-    return 0;
-}
-
-int cmd_os_lock() {
-    diag_write(LOCK_PASSWORD, strlen(LOCK_PASSWORD));
-    return 0;
-}
-
-
-int cmd_os_get_os_version() {
-    unsigned char response[256];
-    int result_length = 0;
-    diag_discard_content();
-
-    diag_packet *pkt = diag_packet_new();
-
-    diag_packet_add_byte(pkt, 0xd1);
-    diag_packet_add_byte(pkt, 0x29);
-    diag_packet_add_byte(pkt, 0x26);
-
-    diag_packet_add_padding(pkt, 0, 81);
-
-    diag_packet_add_trailer(pkt);
-
-    diag_write_packet(pkt);
-
-    diag_packet_free(pkt);
-
-    if (diag_read(response, sizeof(response), 20)) {
-	// OS response is NULL-terminated
-	printf("%s\n", response + 4);
-	return 0;
-    };
-
-    return 1;
-}
-
-int cmd_os_get_amss_version() {
-    unsigned char response[256];
-
-    diag_discard_content();
-
-    diag_packet *pkt = diag_packet_new();
-
-    diag_packet_add_byte(pkt, 0xd1);
-    diag_packet_add_byte(pkt, 0x0b);
-    diag_packet_add_byte(pkt, 0x26);
-
-    diag_packet_add_padding(pkt, 0, 13);
-
-    diag_packet_add_trailer(pkt);
-
-    diag_write_packet(pkt);
-
-    diag_packet_free(pkt);
-
-    if (diag_read(response, sizeof(response), 5)) {
-	printf("%s\n", response+4);
-	return 0;
-    }
-
-    return 1;
-}
-
-int cmd_os_switch_to_amss() {
-    fprintf(stderr, "> Switch from OS to AMSS\n");
-    diag_packet *pkt = diag_packet_new();
-
-    diag_packet_add_byte(pkt, 0xd1);
-    diag_packet_add_byte(pkt, 0x49);
-    diag_packet_add_byte(pkt, 0x27);
-    diag_packet_add_byte(pkt, 0x00);
-    diag_packet_add_byte(pkt, 0x02);
-
-    diag_packet_add_padding(pkt, 0, 11);
-
-    diag_packet_add_trailer(pkt);
-
-    /* for some reason we need this twice according to Acer */
-    diag_write_packet(pkt);
-    diag_write_packet(pkt);
-
-    diag_packet_free(pkt);
-
-    cmd_os_reset();
-}
-
-int cmd_os_reset() {
-    fprintf(stderr, "> Reset (OS Mode)\n");
-
-    diag_packet *pkt = diag_packet_new();
-
-    diag_packet_add_byte(pkt, 0xd1);
-    diag_packet_add_byte(pkt, 100);
-
-    diag_packet_add_padding(pkt, 0, 14);
-    diag_packet_add_trailer(pkt);
-
-    /* we need this twice again */
-    diag_write_packet(pkt);
-    diag_write_packet(pkt);
-
-    diag_packet_free(pkt);
-}
-
-int cmd_amss_switch_to_recovery() {
-    fprintf(stderr, "> Switch to Recovery (AMSS mode)\n");
-
-    diag_packet *pkt = diag_packet_new();
-
-    diag_packet_add_header(pkt);
-    diag_packet_add_byte(pkt, 0x1d);
-    diag_packet_add_trailer(pkt);
-
-    diag_write_packet(pkt);
-
-    usleep(100);
-
-    diag_write_packet(pkt);
-
-    usleep(100);
-
-    diag_packet_free(pkt);
-
-    cmd_amss_reset(); 
-}
-
-int cmd_amss_reset() {
-    fprintf(stderr, "> Reset (AMSS Mode)\n");
-    diag_packet *pkt = diag_packet_new();
-
-    diag_packet_add_header(pkt);
-    diag_packet_add_byte(pkt, 11);
-    diag_packet_add_trailer(pkt);
-
-    diag_write_packet(pkt);
-
-    diag_packet_free(pkt);
-}
-
 int read_hex_int_from_file(char* path) {
     int res = -1;
     FILE *fh = fopen(path, "rb");
@@ -289,7 +146,7 @@ int get_diag_tty_name(char* name, struct usb_device_interface* query) {
      */
 
     int res = -1;
-    int node_found = 0;
+    int node_found_flag = 0;
     int temp_id;
     int idVendor, idProduct, bInterfaceNumber;
 
@@ -341,7 +198,7 @@ int get_diag_tty_name(char* name, struct usb_device_interface* query) {
 	if (temp_id != idProduct)
 	    continue;
 
-	node_found = 1;
+	node_found_flag = 1;
 	break;
     }
 
@@ -352,7 +209,7 @@ int get_diag_tty_name(char* name, struct usb_device_interface* query) {
      * what X in 1-1.1:X.0 means and I am too lazy to look-up now.
      */
 
-    if (!node_found) {
+    if (!node_found_flag) {
 	goto free_handle;
     }
 
@@ -367,15 +224,15 @@ int get_diag_tty_name(char* name, struct usb_device_interface* query) {
 	goto out;
     }
 
-    node_found = 0;
+    node_found_flag = 0;
     while ((entry = readdir(usb_device_dir_handle)) != NULL) {
 	if (!strncmp(entry->d_name, "ttyUSB", 6)) {
-	    node_found = 1;
+	    node_found_flag = 1;
 	    break;
 	}
     }
 
-    if (node_found) {
+    if (node_found_flag) {
 	strcpy(name, entry->d_name);
 	res = 0;
     }
@@ -387,47 +244,52 @@ int get_diag_tty_name(char* name, struct usb_device_interface* query) {
     return res;
 }
 
-struct acer_diag_command {
-    char name[32];
-    char description[64];
-    int mode;
-    int (*callback)(void);
-};
-
-struct acer_diag_command acer_diag_commands[] = {
-    { "unlock", "Unlock DIAG mode (OS)", ACER_MODE_OS, cmd_os_unlock },
-    { "lock", "Lock DIAG mode (OS)", ACER_MODE_OS, cmd_os_lock },
-
-    { "get-amss-version", "Get AMSS version string (OS)", ACER_MODE_OS, cmd_os_get_amss_version },
-    { "get-os-version", "Get OS version string (OS)", ACER_MODE_OS, cmd_os_get_os_version },
-
-    { "switch-to-amss", "Switch to AMSS (OS)", ACER_MODE_OS, cmd_os_switch_to_amss },
-    /*
-    { "reset", "Reset (AMSS)", ACER_MODE_AMSS, cmd_amss_reset },
-    { "switch-to-recovery", "Switch to Recovery (AMSS)", ACER_MODE_AMSS, cmd_amss_switch_to_recovery },
-    */
-};
-
-#define ACER_DIAG_COMMAND_COUNT sizeof(acer_diag_commands) / sizeof(struct acer_diag_command)
-
 void usage(char *app) {
     int i = 0;
+    int mode;
     fprintf(stderr, "Usage: %s [-d] command\n", app);
     fprintf(stderr, "Available commands:\n");
 
-    for (; i < ACER_DIAG_COMMAND_COUNT; i++) {
-	fprintf(stderr, " %-32s %s\n", acer_diag_commands[i].name,
-		                       acer_diag_commands[i].description);
+    for (; i < ARRAY_SIZE(acer_diag_commands); i++) {
+	mode = acer_diag_commands[i].mode;
+
+	fprintf(stderr, " %-32s %s (%s)\n",
+			acer_diag_commands[i].name,
+		        acer_diag_commands[i].description,
+			acer_diag_commands[i].mode & ACER_MODE_OS ? "OS"
+			                                          : "AMSS");
     }
+}
+
+/* The caller should free the result */
+char* get_device_mode_string(int mode) {
+    int i, got_main_mode_flag = 0;
+    char *result = malloc(512);
+    for (i = 0; i < ARRAY_SIZE(acer_device_modes); i++) {
+	if (mode & acer_device_modes[i].mode) {
+	    if (got_main_mode_flag == 0) {
+		sprintf(result, "%s", acer_device_modes[i].description);
+		got_main_mode_flag = 1;
+	    }
+	    else {
+		strcat(result, " +");
+		strcat(result, acer_device_modes[i].description);
+	    }
+	}
+    }
+
+    return result;
 }
 
 int main(int argc, char** argv) {
     char device_name[256];
     char buffer[1024];
-    char* command;
-    int i = 0, node_found = 0, opt, command_executed = 0;
-    int res = EXIT_SUCCESS;
+    char* command = NULL;
+    int i = 0, node_found_flag = 0, opt, command_executed_flag = 0;
+    int wrong_mode_flag = 0;
+    int res = EXIT_FAILURE;
     int device_mode = ACER_MODE_UNKNOWN;
+    char* device_mode_string = NULL;
 
     memset(device_name, 0, sizeof(device_name));
 
@@ -438,14 +300,15 @@ int main(int argc, char** argv) {
 		break;
 	    case 'h': // Help
 		usage(argv[0]);
-		return EXIT_SUCCESS;
+		res = EXIT_SUCCESS;
+		goto out;
 	    default:
 		usage(argv[0]);
-		return EXIT_FAILURE;
+		goto out;
 	}
     }
 
-    for (i=0; i < sizeof(known_usb_devices)/sizeof(struct usb_device_interface); i++) {
+    for (i=0; i < ARRAY_SIZE(known_usb_devices); i++) {
 	if (debug) {
 	    printf("[D] Searching for %04x:%04x (interface %02x)\n",
 		    known_usb_devices[i].idVendor,
@@ -454,58 +317,77 @@ int main(int argc, char** argv) {
 	}
 
 	if (!get_diag_tty_name(device_name, &known_usb_devices[i])) {
-	    node_found = 1;
+	    node_found_flag = 1;
 	    device_mode = known_usb_devices[i].mode;
 	    break;
 	}
     }
 
-    if (!node_found) {
+    if (!node_found_flag) {
 	fprintf(stderr,
 		"%s: No diag tty found\n"
 		"Please make sure qcserial module is loaded and it knows about your device\n"
 		, argv[0]);
-	return EXIT_FAILURE;
+	goto out;
     }
+
+    device_mode_string = get_device_mode_string(device_mode);
 
     snprintf(buffer, sizeof(buffer), "/dev/%s", device_name);
 
-    if (debug) {
-	printf("[D] Using device %s\n", buffer);
-    }
+    printf("[I] Using device %s (%s)\n", buffer, device_mode_string);
 
     dev_fd = open(buffer, O_RDWR | O_EXCL | O_NONBLOCK | O_NOCTTY);
 
     if (dev_fd < 0) {
 	perror(buffer);
-	return EXIT_FAILURE;
+	goto out;
     }
 
     if (optind >= argc) {
 	fprintf(stderr, "%s: Command required\n", argv[0]);
 	usage(argv[0]);
-	return EXIT_FAILURE;
+	goto out;
     }
 
     command = argv[optind];
 
-    for (i = 0; i < ACER_DIAG_COMMAND_COUNT; i++) {
-	if (!strcmp(command, acer_diag_commands[i].name) &&
-		device_mode & acer_diag_commands[i].mode ) {
-	    res = acer_diag_commands[i].callback();
-	    command_executed = 1;
-	    goto out;
-	}
+    if (!strcmp(command, "test")) {
+	res = EXIT_SUCCESS;
+	goto out;
     }
 
-    if (! command_executed) {
+    for (i = 0; i < ARRAY_SIZE(acer_diag_commands); i++) {
+	if (strcmp(command, acer_diag_commands[i].name))
+	    continue;
+
+	if (device_mode & acer_diag_commands[i].mode) {
+	    res = acer_diag_commands[i].callback();
+	    command_executed_flag = 1;
+	    goto out;
+	}
+	else
+	    wrong_mode_flag = 1;
+    }
+
+    if (wrong_mode_flag) {
+	fprintf(stderr, "%s: Command \"%s\" is not available in %s mode\n",
+			argv[0], command,
+			device_mode | ACER_MODE_OS ? "OS" : "AMSS");
+	goto out;
+    }
+
+    if (! command_executed_flag) {
 	fprintf(stderr, "%s: Unknown command \"%s\"\n", argv[0], command);
 	usage(argv[0]);
-	return EXIT_FAILURE;
     }
 
 out:
-    close(dev_fd);
+    if (dev_fd)
+	close(dev_fd);
+
+    if (device_mode_string)
+	free(device_mode_string);
 
     return res;
 }

@@ -1,3 +1,6 @@
+#ifndef _ACER_DIAG_CRC16CCIT_H
+#define _ACER_DIAG_CRC16CCIT_H
+
 typedef unsigned short crc16ccit_ctx;
 
 /*
@@ -15,3 +18,4 @@ void crc16ccit_update(crc16ccit_ctx* ctx, unsigned char value);
  */
 unsigned short crc16ccit_digest(crc16ccit_ctx *ctx);
 
+#endif // _ACER_DIAG_CRC16CCIT_H
