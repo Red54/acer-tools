@@ -1,6 +1,8 @@
 #ifndef _ACER_DIAG_DIAG_PACKET_H
 #define _ACER_DIAG_DIAG_PACKET_H
 
+#include <sys/types.h>
+
 struct _diag_packet {
     unsigned char buffer[2048];
     size_t length;

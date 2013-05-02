@@ -6,6 +6,9 @@
 #define LOCK_PASSWORD   "acer.dfzse,eizdfXD3#($%)@dxiexAA"
 #define UNLOCK_PASSWORD "acer.llxdiafkZidf#$i1234(@01xdiP"
 
+#define RESPONSE_ACK 0x02
+#define RESPONSE_NACK 0x03
+
 int cmd_os_unlock() {
     diag_write(UNLOCK_PASSWORD, strlen(UNLOCK_PASSWORD));
     return 0;
@@ -34,7 +37,7 @@ int cmd_os_get_os_version() {
 
     diag_packet_free(pkt);
 
-    if (diag_read(response, sizeof(response), 20)) {
+    if (diag_read(response, sizeof(response), 20) > 0) {
 	// OS response is NULL-terminated
 	printf("%s\n", response + 4);
 	return 0;
@@ -58,7 +61,7 @@ int cmd_amss_get_hw_version() {
 
     diag_packet_free(pkt);
 
-    if (diag_read(response, sizeof(response), 5)) {
+    if (diag_read(response, sizeof(response), 5) > 0) {
 	if (response[1] > 20) {
 	    fprintf(stderr, "Response too long\n");
 	    return 1;
@@ -69,6 +72,25 @@ int cmd_amss_get_hw_version() {
 	printf("%s\n", result);
 	return 0;
     }
+
+    return 1;
+}
+
+int cmd_os_test() {
+    unsigned char response[256];
+    diag_packet *pkt = diag_packet_new();
+
+    // diag_packet_add_header(pkt);
+    diag_packet_add_byte(pkt, 0x06);
+    diag_packet_add_trailer(pkt);
+
+    diag_write_packet(pkt);
+
+    if (diag_read(response, sizeof(response), 1) > 0) {
+	return 0;
+    }
+
+    fprintf(stderr, "[I] No response from NOP command. Device may be locked.\n");
 
     return 1;
 }
@@ -89,7 +111,7 @@ int cmd_os_get_amss_version() {
 
     diag_packet_free(pkt);
 
-    if (diag_read(response, sizeof(response), 5)) {
+    if (diag_read(response, sizeof(response), 5) > 0) {
 	printf("%s\n", response+4);
 	return 0;
     }
@@ -113,7 +135,7 @@ int cmd_amss_get_os_version() {
 
     usleep(200);
 
-    if (diag_read(response, sizeof(response), 5)) {
+    if (diag_read(response, sizeof(response), 5) > 0) {
 	return 0;
     }
 
@@ -134,6 +156,7 @@ int cmd_os_switch_to_amss() {
 
     /* for some reason we need this twice according to Acer */
     diag_packet_add_trailer(pkt);
+
     diag_write_packet(pkt);
     diag_write_packet(pkt);
 
@@ -152,12 +175,14 @@ int cmd_os_reset() {
 
     diag_packet_add_padding(pkt, 0, 14);
 
-    /* we need this twice again */
     diag_packet_add_trailer(pkt);
-    diag_write_packet(pkt);
-    diag_write_packet(pkt);
 
+    /* we need this twice again */
+    diag_write_packet(pkt);
+    diag_write_packet(pkt);
     diag_packet_free(pkt);
+
+    diag_discard_content();
 }
 
 int cmd_amss_switch_to_recovery() {
@@ -177,6 +202,8 @@ int cmd_amss_switch_to_recovery() {
     diag_packet_free(pkt);
 
     usleep(100);
+
+    diag_discard_content();
 
     cmd_amss_reset(); 
 }
@@ -199,4 +226,26 @@ int cmd_amss_reset() {
     usleep(200);
     diag_discard_content();
 }
+
+int cmd_amss_test() {
+    unsigned char response[256];
+
+    diag_packet *pkt = diag_packet_new();
+
+    diag_packet_add_header(pkt);
+    diag_packet_add_byte(pkt, 31);
+    diag_packet_add_byte(pkt, 0);
+
+    diag_packet_add_trailer(pkt);
+    diag_write_packet(pkt);
+
+    usleep(200);
+
+    if (diag_read(response, sizeof(response), 5) > 0) {
+	return 0;
+    }
+
+    return 1;
+}
+
 

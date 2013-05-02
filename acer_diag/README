@@ -1,2 +1,55 @@
 This is a re-implementation of the interesting bits from Acer EUU software
 package specifically targeting Linux host.
+
+At the moment it supports basic Acer A1 detection, mode switching and SW
+version queries.
+
+For 3.8+ kernel qcserial.c needs the following lines to id_table:
+
+/* Acer Liquid E - DIAG, ADB, MODEM, NMEA, MSC (SD card)*/
+/* ADB enabled - 0502:3202, 0502:3222 */
+{USB_DEVICE_INTERFACE_NUMBER(0x0502, 0x3202, 0)},       /* Acer Liquid E DIAG */
+{USB_DEVICE_INTERFACE_NUMBER(0x0502, 0x3202, 2)},       /* Acer Liquid E Modem */
+{USB_DEVICE_INTERFACE_NUMBER(0x0502, 0x3202, 3)},       /* Acer Sync (not NMEA) */
+
+/* USB Tethering enabled */
+{USB_DEVICE_INTERFACE_NUMBER(0x0502, 0x3222, 2)},       /* Acer Generic DIAG */
+
+/* ADB disabled - 0502:3203, 0505:3223 */
+{USB_DEVICE_INTERFACE_NUMBER(0x0502, 0x3203, 0)},       /* Acer Liquid E DIAG */
+{USB_DEVICE_INTERFACE_NUMBER(0x0502, 0x3203, 1)},       /* Acer Liquid E Modem */
+{USB_DEVICE_INTERFACE_NUMBER(0x0502, 0x3203, 2)},       /* Acer Sync (not NMEA) */
+
+/* USB Tethering disabled */
+{USB_DEVICE_INTERFACE_NUMBER(0x0502, 0x3223, 2)},       /* Acer Generic DIAG */
+
+/* Acer Liquid AMSS Mode */
+{USB_DEVICE(0x0502, 0x9002)},
+
+Example session:
+
+$ ./acer_diag test
+[I] Using device /dev/ttyUSB0 (OS +ADB)
+[I] No response from NOP command. Device may be locked.
+
+$ ./acer_diag unlock
+[I] Using device /dev/ttyUSB0 (OS +ADB)
+
+$ ./acer_diag get-os-version
+[I] Using device /dev/ttyUSB0 (OS +ADB)
+4.008.08_Acer_AA96_EMEA-VFIT
+
+$ ./acer_diag switch-to-amss
+[I] Using device /dev/ttyUSB0 (OS +ADB)
+> Switch from OS to AMSS
+> Reset (OS Mode)
+
+$ ./acer_diag get-hw-version
+[I] Using device /dev/ttyUSB0 (AMSS)
+8650B--SDCAOLYM
+
+$ ./acer_diag reset
+[I] Using device /dev/ttyUSB0 (AMSS)
+> Reset (AMSS Mode)
+
+The phone wilk reset to fastboot mode.
