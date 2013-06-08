@@ -85,7 +85,6 @@ int main(int argc, char** argv) {
 	fprintf(stderr,
 		"%s: No diag tty found\n"
 		"Please make sure qcserial module is loaded and it knows about your device.\n"
-		"See http://rtg.in.ua/$URL for more info.\n"
 		, argv[0]);
 	goto out;
     }

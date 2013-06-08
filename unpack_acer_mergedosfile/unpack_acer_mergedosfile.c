@@ -6,7 +6,7 @@
  */
 
 /*
- * Usage: ./a.out [-s] acer_MergedOSFile.bin
+ * Usage: ./unpack_acer_mergedosfile [-s] acer_MergedOSFile.bin
  *  -s	Skip 20-byte header for some files (enabled for A4)
  *    -d dir  Use this directory to extract (default ".")
  *
@@ -16,7 +16,14 @@
 #include <stdlib.h>
 
 #include <sys/types.h>
+
+#ifdef WIN32
+/* No sys/mman.h on windows */
+#include <windows.h>
+#else
 #include <sys/mman.h>
+#endif
+
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -177,6 +184,9 @@ int main(int argc, char** argv) {
     int skip_header = 0;
     int opt;
     char *target_directory = ".";
+#ifdef WIN32
+    HANDLE fm, h;
+#endif
 
     while((opt = getopt(argc, argv, "sd:")) != -1) {
 	switch(opt) {
@@ -212,11 +222,28 @@ int main(int argc, char** argv) {
 	return EXIT_FAILURE;
     }
 
+#ifdef WIN32
+    /* https://groups.google.com/forum/?fromgroups#!topic/avian/Q8bwM4ksubw */
+    h = (HANDLE)_get_osfhandle(mf_fd);
+
+    fm = CreateFileMapping(h, NULL, PAGE_READONLY, 0, 0, NULL);
+    if (!fm) {
+	perror("Can't CreateFileMapping");
+	return EXIT_FAILURE;
+    }
+
+    mf_data = (char *)MapViewOfFile(fm, FILE_MAP_READ, 0, 0, file_info.st_size);
+    if (!mf_data) {
+	perror("Can't MapViewOfFile");
+	return EXIT_FAILURE;
+    }
+#else
     mf_data = (char *)mmap(NULL, file_info.st_size, PROT_READ, MAP_SHARED, mf_fd, 0);
     if (mf_data == MAP_FAILED) {
 	perror("Can't allocate memory");
 	return EXIT_FAILURE;
     }
+#endif
 
     // 1. Verify header
     if (verify_header()) {
@@ -230,6 +257,8 @@ int main(int argc, char** argv) {
     mf_class = get_mergedfile_class();
     if (mf_class == FILE_CLASS_A4)
 	skip_header = 1;
+
+    get_mergedfile_amssversion();
     
     // 4. Extract the contents
     if (extract_partitions(target_directory, skip_header)) {
@@ -237,10 +266,15 @@ int main(int argc, char** argv) {
     }
 
     // 5. Cleanup
+#ifdef WIN32
+    UnmapViewOfFile(mf_data);
+    CloseHandle(fm);
+#else
     if (munmap(mf_data, file_info.st_size)) {
 	perror("Can't deallocate memory");
 	return EXIT_FAILURE;
     }
+#endif
 
     if (close(mf_fd)) {
 	perror("Can't close file");
@@ -274,6 +308,16 @@ int get_mergedfile_class() {
     }
 
     return class_id;
+}
+
+int get_mergedfile_amssversion() {
+    char buf[32];
+    memcpy(&buf, mf_data + 0x120, sizeof(buf));
+
+    buf[31] = '\0';
+
+    printf("AMSS Version: %s\n", buf);
+    return 0;
 }
 
 int extract_partitions(const char* target_dir, int skip_header) {
