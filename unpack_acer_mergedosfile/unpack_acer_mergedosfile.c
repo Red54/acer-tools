@@ -6,9 +6,12 @@
  */
 
 /*
- * Usage: ./unpack_acer_mergedosfile [-s] acer_MergedOSFile.bin
- *  -s	Skip 20-byte header for some files (enabled for A4)
- *    -d dir  Use this directory to extract (default ".")
+ *
+ * Usage: ./unpack_acer_mergedosfile [-s] [-f] [-d dir] acer_MergedOSFile.bin
+ *	-s	Skip 20-byte header for some files (enabled for A4)
+ *	-d dir	Use this directory to extract (default ".")
+ *	-f	Continue even if MD5 check fails
+ *	-h	This help
  *
  */
 #include <stdio.h>
@@ -392,18 +395,18 @@ int main(int argc, char** argv) {
     }
 #endif
 
-    // 1. Verify header
+    /* 1. Verify header */
     if (verify_header(mf_data)) {
 	fprintf(stderr, "FAILURE: Invalid header\n");
 	return EXIT_FAILURE;	
     }
 
-    // 2. Get file class
+    /* 2. Get file class */
     mf_class = get_mergedfile_class(mf_data);
     if (mf_class == FILE_CLASS_A4)
 	skip_header = 1;
 
-    // 3. TODO: Verify MD5 SUM
+    /* 3. Verify MD5 SUM */
     if (verify_md5(mf_data, file_info.st_size)) {
 	fprintf(stderr, "FAILURE: Invalid MD5\n");
 	if (!force)
@@ -413,12 +416,12 @@ int main(int argc, char** argv) {
     print_mergedfile_amssversion(mf_data);
     print_mergedfile_builddate(mf_data);
     
-    // 4. Extract the contents
+    /* 4. Extract the contents */
     if (extract_partitions(mf_data, target_directory, skip_header)) {
 	fprintf(stderr, "FAILURE: Could not extract partitions\n");
     }
 
-    // 5. Cleanup
+    /* 5. Cleanup */
 #ifdef WIN32
     UnmapViewOfFile(mf_data);
     CloseHandle(fm);
